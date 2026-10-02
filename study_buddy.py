@@ -1,3 +1,4 @@
+from datetime import date
 import streamlit as st
 from openai import OpenAI
 from PyPDF2 import PdfReader
@@ -13,6 +14,24 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# ── CET-6 Personal Profile ───────────────────────────────────────────────────
+if "cet6_target_score" not in st.session_state:
+    st.session_state.cet6_target_score = 550
+# 默认设定为今年年底的六级考试日期（2026年12月12日）
+if "cet6_exam_date" not in st.session_state:
+    st.session_state.cet6_exam_date = date(2026, 12, 12)
+if "cet6_study_hours" not in st.session_state:
+    st.session_state.cet6_study_hours = 40
+
+if "cet6_profile" not in st.session_state:
+    st.session_state.cet6_profile = {
+        "词汇": 60, "听力": 50, "阅读": 70, "写作": 60, "翻译": 50
+    }
+    st.session_state.cet6_plan = ["等待生成..."]
+
+if "diagnosis_done" not in st.session_state:
+    st.session_state.diagnosis_done = False
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -432,7 +451,6 @@ client = OpenAI(
     api_key=DEEPSEEK_API_KEY,
     base_url="https://api.deepseek.com"
 )
-
 # ── Session state defaults ────────────────────────────────────────────────────
 for k, v in {
     "quiz": None,
@@ -457,14 +475,21 @@ with st.sidebar:
         <div style="font-family:'Syne',sans-serif;font-size:1.3rem;font-weight:800;
                     background:linear-gradient(135deg,#e2e8f0,#4f8ef7);
                     -webkit-background-clip:text;-webkit-text-fill-color:transparent;
-                    background-clip:text;">🧠 StudyBuddy</div>
-        <div style="font-size:.78rem;color:#64748b;margin-top:.2rem;">Powered by Groq × LLaMA</div>
+                    background-clip:text;">🎓 CET-6 Coach</div>
+        <div style="font-size:.78rem;color:#64748b;margin-top:.2rem;">Powered by DeepSeek</div>
     </div>
     <div class="divider"></div>
     """, unsafe_allow_html=True)
 
-    st.markdown('<div class="sidebar-section-title">⚙️ Quiz Settings</div>', unsafe_allow_html=True)
-    num_questions = st.slider("Number of questions", 3, 10, 5)
+    # ... 侧边栏前面的东西 ...
+
+    st.markdown('<div class="sidebar-section-title">🎯 备考目标</div>', unsafe_allow_html=True)
+    st.session_state.cet6_target_score = st.number_input("目标分数", min_value=425, max_value=710, value=st.session_state.cet6_target_score, step=10)
+    st.session_state.cet6_exam_date = st.date_input("考试日期", value=st.session_state.cet6_exam_date)
+    st.session_state.cet6_study_hours = st.number_input("每日学习时长（分钟）", min_value=10, max_value=300, value=st.session_state.cet6_study_hours, step=10)
+
+    st.markdown('<div class="sidebar-section-title">⚙️ Quiz Settings</div>', unsafe_allow_html=True)  # <--- 这是原本就有的行，不要动
+    num_questions = st.slider("Number of questions", 3, 10, 5)  # <--- 这是原本就有的行，不要动
     difficulty = st.selectbox("Difficulty", ["Mixed", "Easy", "Medium", "Hard"])
     question_type = st.selectbox("Question type", ["Multiple Choice", "True / False", "Mixed"])
 
@@ -506,10 +531,76 @@ with st.sidebar:
 st.markdown("""
 <div class="hero">
     <div class="hero-badge">✦ AI-Powered Learning</div>
-    <div class="hero-title">Your Personal<br>Study Companion</div>
-    <div class="hero-sub">Upload your notes and let AI generate quizzes, flashcards, and summaries in seconds.</div>
+    <div class="hero-title">CET-6 Personal<br>Coach</div>
+    <div class="hero-sub">基于个人学习数据的六级自适应备考智能体</div>
 </div>
 """, unsafe_allow_html=True)
+
+# ── CET-6 Dashboard ──────────────────────────────────────────────────────────
+
+# ── CET-6 智能诊断区 ──────────────────────────────────────────────────────────
+st.markdown("### 🩺 个人情况诊断")
+user_input = st.text_area("输入你上次六级各部分的成绩或最近的复习情况（例如：听力110，阅读150，写作翻译120，感觉听力细节总是跟不上）：", height=80)
+
+if st.button("🎯 让 AI 帮我诊断并生成今日计划"):
+    with st.spinner("DeepSeek 正在分析你的薄弱点..."):
+                # 自动计算距离考试天数，确保 prompt 能获取到最新数据
+        days_left_for_prompt = (st.session_state.cet6_exam_date - date.today()).days
+        if days_left_for_prompt < 0:
+            days_left_for_prompt = 0
+
+        prompt = f"""
+        你是一个专业的六级辅导老师。用户的成绩或情况如下：{user_input}。
+        用户的目标分数是 {st.session_state.cet6_target_score} 分，距离考试还有 {days_left_for_prompt} 天，每天可以学习 {st.session_state.cet6_study_hours} 分钟。
+        请根据以上信息，生成合理的五维能力分值和今日学习计划。
+        请严格按以下 JSON 格式输出（不要 markdown 标记）：
+        {{
+            "profile": {{"词汇": 分数1, "听力": 分数2, "阅读": 分数3, "写作": 分数4, "翻译": 分数5}},
+            "plan": ["任务1", "任务2", "任务3"]
+        }}
+        注意：分数是0-100的整数，代表该能力的掌握程度。根据用户输入动态推测，如果某项没提到，给一个合理的基础分（55-65）。
+        """
+        resp = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        try:
+            raw = resp.choices[0].message.content.strip()
+            clean = raw.replace("```json", "").replace("```", "").strip()
+            result = json.loads(clean)
+            st.session_state.cet6_profile = result["profile"]
+            st.session_state.cet6_plan = result["plan"]
+            st.session_state.diagnosis_done = True
+            st.rerun()
+        except Exception as e:
+            st.error("AI 分析出错，请稍后重试。")
+
+# ── CET-6 Dashboard ──────────────────────────────────────────────────────────
+st.markdown("### 📊 当前能力画像")
+col_a, col_b, col_c = st.columns(3)
+
+# 自动计算距离考试天数
+days_left = (st.session_state.cet6_exam_date - date.today()).days
+if days_left < 0:
+    days_left = 0
+
+with col_a:
+    st.metric(label="🎯 目标分数", value=f"{st.session_state.cet6_target_score}分")
+with col_b:
+    st.metric(label="⏳ 距离考试", value=f"{days_left}天")
+with col_c:
+    st.metric(label="🔥 每日学习", value=f"{st.session_state.cet6_study_hours}分钟")
+for skill, score in st.session_state.cet6_profile.items():
+    # 如果分数低于60，显示红色警告，否则显示绿色
+    color = "red" if score < 60 else "green"
+    st.markdown(f"**{skill}** <span style='color:{color}'>{score}%</span>", unsafe_allow_html=True)
+    st.progress(score / 100)
+
+st.markdown("### 📅 今日学习计划")
+for task in st.session_state.cet6_plan:
+    st.markdown(f"- {task}")
+
+st.markdown("---")  # 一条分割线，把上面和下面的上传区分开
 
 # ── Upload ────────────────────────────────────────────────────────────────────
 uploaded_file = st.file_uploader("Drop your PDF notes here", type="pdf", label_visibility="collapsed")
@@ -630,7 +721,7 @@ Notes:
     st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
-    tab1, tab2, tab3 = st.tabs(["⚡ Quiz", "🃏 Flashcards", "📋 Summary"])
+    tab1, tab2, tab3 ,tab4= st.tabs(["⚡ Quiz", "🃏 Flashcards", "📋 Summary", "📝 错题本"])
 
     # ──────────────────────────────────────────────────────────────────────────
     # TAB 1 — QUIZ
@@ -803,7 +894,54 @@ Notes:
                 st.session_state.summary = None
                 st.rerun()
 
-else:
+    with tab4:
+        st.markdown("### 📝 错题智能分析")
+        st.markdown("把你做错的题目（包含题干、你的选项、正确答案）粘贴在下面，AI 会帮你分析错因、提取生词并生成强化练习。")
+        
+        error_input = st.text_area("粘贴你的错题：", height=150, placeholder="例如：\n题目：What is the main idea of the passage?\n我的答案：A\n正确答案：C\n原文片段：...")
+
+        if st.button("🔍 分析错题并生成强化训练"):
+            if not error_input.strip():
+                st.warning("请先粘贴你的错题哦。")
+            else:
+                with st.spinner("AI 正在分析你的错因..."):
+                    error_prompt = f"""
+                    你是一位专业的英语六级辅导老师。以下是一道学生的错题记录：
+                    {error_input}
+                    
+                    请完成以下任务，并严格按照 JSON 格式返回（不要 markdown 标记）：
+                    {{
+                        "error_type": "一句话总结错误原因（比如：长难句理解错误 / 词汇量不足 / 定位偏差 / 干扰项误判）",
+                        "summary": "一段详细的错因分析",
+                        "vocabulary": [{{"front": "生词1", "back": "中文释义"}}, {{"front": "生词2", "back": "中文释义"}}],
+                        "similar_question": "出一道考察同样知识点的选择题，并附上答案"
+                    }}
+                    """
+                    resp = client.chat.completions.create(
+                        model="deepseek-chat",
+                        messages=[{"role": "user", "content": error_prompt}]
+                    )
+                    try:
+                        raw = resp.choices[0].message.content.strip().replace("```json", "").replace("```", "").strip()
+                        result = json.loads(raw)
+                        
+                        st.success("分析完成！")
+                        st.markdown(f"**🚨 错误类型**：{result.get('error_type', '未知')}")
+                        st.markdown(f"**📖 错因总结**：{result.get('summary', '无')}")
+                        
+                        st.markdown("---")
+                        st.markdown("**📇 生词闪记（点击翻转）**")
+                        for vocab in result.get("vocabulary", []):
+                            st.markdown(f"- **{vocab['front']}** : {vocab['back']}")
+                            
+                        st.markdown("---")
+                        st.markdown("**🏋️ 举一反三（针对性强化练习）**")
+                        st.markdown(result.get("similar_question", "暂无"))
+                        
+                    except Exception as e:
+                        st.error("分析失败，请检查格式或稍后重试。")
+                        st.write(e)
+
     # ── Empty state ───────────────────────────────────────────────────────────
     st.markdown("""
     <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:.5rem;">
