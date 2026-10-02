@@ -1,5 +1,5 @@
 import streamlit as st
-from openai import Openai
+from openai import OpenAI
 from PyPDF2 import PdfReader
 import json
 import os
