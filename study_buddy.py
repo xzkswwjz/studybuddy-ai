@@ -1,5 +1,5 @@
 import streamlit as st
-from groq import Groq
+from openai import Openai
 from PyPDF2 import PdfReader
 import json
 import os
@@ -424,11 +424,14 @@ hr { border-color: var(--border) !important; }
 """, unsafe_allow_html=True)
 
 # ── API Key ───────────────────────────────────────────────────────────────────
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-if not GROQ_API_KEY:
-    st.error("⚠️ GROQ_API_KEY environment variable not found. Please set it before running.")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+if not DEEPSEEK_API_KEY:
+    st.error("⚠️ DEEPSEEK_API_KEY environment variable not found. Please set it before running.")
     st.stop()
-client = Groq(api_key=GROQ_API_KEY)
+client = OpenAI(
+    api_key=DEEPSEEK_API_KEY,
+    base_url="https://api.deepseek.com"
+)
 
 # ── Session state defaults ────────────────────────────────────────────────────
 for k, v in {
@@ -554,7 +557,7 @@ if st.session_state.content:
         )
         with st.spinner("Crafting your quiz…"):
             resp = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="deepseek-chat",
                 messages=[{
                     "role": "user",
                     "content": f"""
@@ -584,7 +587,7 @@ Notes:
     if gen_flash:
         with st.spinner("Creating flashcards…"):
             resp = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="deepseek-chat",
                 messages=[{
                     "role": "user",
                     "content": f"""
@@ -610,7 +613,7 @@ Notes:
     if gen_sum:
         with st.spinner("Summarising your notes…"):
             resp = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="deepseek-chat",
                 messages=[{
                     "role": "user",
                     "content": f"""
